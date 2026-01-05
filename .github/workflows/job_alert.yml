@@ -1,91 +1,29 @@
-import requests
-from bs4 import BeautifulSoup
-import pandas as pd
-import yagmail
-import os
-import json
+name: Twice-Daily Remote Customer Care Job Alert
 
-# ---- CONFIGURATION ---- #
-GMAIL_USER = os.environ.get("GMAIL_USER")
-GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
-TO_EMAIL = GMAIL_USER
-SENT_JOBS_FILE = "sent_jobs.json"
+on:
+  schedule:
+    - cron: '0 10,22 * * *'  # runs twice a day: 10:00 UTC and 22:00 UTC
+  workflow_dispatch:         # allows manual runs anytime
 
-# ---- JOB BOARDS ---- #
-JOB_BOARDS = [
-    {"name": "RemoteOK", "url": "https://remoteok.com/remote-customer-support-jobs"},
-    {"name": "WeWorkRemotely", "url": "https://weworkremotely.com/categories/remote-customer-support-jobs"},
-    {"name": "StartupJobs", "url": "https://startup.jobs/remote-jobs/customer-support"},
-    {"name": "Indeed Canada", "url": "https://ca.indeed.com/jobs?q=Customer+Service+Representative&l=Remote"},
-    {"name": "Indeed USA", "url": "https://www.indeed.com/jobs?q=Customer+Service+Representative&l=Remote"},
-    {"name": "Indeed Nigeria", "url": "https://ng.indeed.com/jobs?q=Customer+Service+Representative&l=Remote"},
-    {"name": "Glassdoor UK", "url": "https://www.glassdoor.co.uk/Job/remote-customer-service-jobs-SRCH_IL.0,2_IS11047_KO3,20.htm"},
-    {"name": "Glassdoor USA", "url": "https://www.glassdoor.com/Job/us-remote-customer-service-jobs-SRCH_IL.0,2_IS1_KO3,22.htm"},
-]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-# ---- LOAD SENT JOBS ---- #
-if os.path.exists(SENT_JOBS_FILE):
-    with open(SENT_JOBS_FILE, "r") as f:
-        sent_jobs = json.load(f)
-else:
-    sent_jobs = []
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
-# Helper to extract sample keywords and skills
-def extract_keywords_skills(title, description):
-    words = title.split() + description.split()
-    keywords = words[:5]
-    skills = words[5:10]
-    return keywords, skills
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 pandas lxml yagmail
 
-# ---- SCRAPE JOBS ---- #
-all_jobs = []
-
-for board in JOB_BOARDS:
-    try:
-        response = requests.get(board["url"], headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code != 200:
-            print(f"Failed to fetch {board['name']}")
-            continue
-        soup = BeautifulSoup(response.text, "lxml")
-        jobs = soup.find_all("a", href=True)
-        for job in jobs[:20]:
-            title = job.get_text(strip=True)
-            link = job["href"]
-            if not link.startswith("http"):
-                link = f"https://{board['name'].lower().replace(' ', '')}.com{link}"
-
-            if any(k.lower() in title.lower() for k in ["customer", "support", "care", "representative"]):
-                if link in sent_jobs:
-                    continue
-                keywords, skills = extract_keywords_skills(title, title)
-                all_jobs.append({
-                    "Company": board["name"],
-                    "Role": title,
-                    "Direct Link": f'<a href="{link}">Click Here</a>',
-                    "Keywords": ", ".join(keywords),
-                    "Skills": ", ".join(skills)
-                })
-                sent_jobs.append(link)
-    except Exception as e:
-        print(f"Error fetching {board['name']}: {e}")
-
-# ---- SEND EMAIL ---- #
-if all_jobs:
-    df = pd.DataFrame(all_jobs)
-    html_table = df.to_html(index=False, escape=False)
-
-    try:
-        yag = yagmail.SMTP(user=GMAIL_USER, password=GMAIL_APP_PASSWORD)
-        subject = "Twice-Daily Remote Customer Care Job Alert (Global)"
-        contents = [
-            "<h2>New Customer Care jobs available (Remote / Global):</h2>",
-            html_table
-        ]
-        yag.send(to=TO_EMAIL, subject=subject, contents=contents)
-        print(f"Email sent for {len(all_jobs)} new jobs!")
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-
-# ---- UPDATE SENT JOBS ---- #
-with open(SENT_JOBS_FILE, "w") as f:
-    json.dump(sent_jobs, f)
+      - name: Run job alert script
+        run: python job_alert.py
+        env:
+          GMAIL_USER: ${{ vars.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
