@@ -7,7 +7,7 @@ EMAIL_TO = os.environ.get("EMAIL_TO")
 
 try:
     message = Mail(
-        from_email=Email("alerts@sendgrid.net"),
+        from_email=Email("johncrossugwuegede@gmail.com"),  # verified sender
         to_emails=To(EMAIL_TO),
         subject="✅ SendGrid Test Email",
         html_content="<p>This is a test email from GitHub Actions via SendGrid.</p>"
