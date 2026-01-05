@@ -8,7 +8,7 @@ import json
 # ---- CONFIGURATION ---- #
 GMAIL_USER = os.environ.get("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
-TO_EMAIL = GMAIL_USER  # send to yourself
+TO_EMAIL = GMAIL_USER
 SENT_JOBS_FILE = "sent_jobs.json"
 
 # ---- JOB BOARDS ---- #
@@ -21,17 +21,16 @@ JOB_BOARDS = [
     {"name": "Indeed Nigeria", "url": "https://ng.indeed.com/jobs?q=Customer+Service+Representative&l=Remote"},
     {"name": "Glassdoor UK", "url": "https://www.glassdoor.co.uk/Job/remote-customer-service-jobs-SRCH_IL.0,2_IS11047_KO3,20.htm"},
     {"name": "Glassdoor USA", "url": "https://www.glassdoor.com/Job/us-remote-customer-service-jobs-SRCH_IL.0,2_IS1_KO3,22.htm"},
-    # LinkedIn will require special scraping/API; for demo we skip LinkedIn automation for now
 ]
 
-# Load previously sent jobs
+# ---- LOAD SENT JOBS ---- #
 if os.path.exists(SENT_JOBS_FILE):
     with open(SENT_JOBS_FILE, "r") as f:
         sent_jobs = json.load(f)
 else:
     sent_jobs = []
 
-# Helper to extract keywords and skills
+# Helper to extract sample keywords and skills
 def extract_keywords_skills(title, description):
     words = title.split() + description.split()
     keywords = words[:5]
@@ -49,16 +48,15 @@ for board in JOB_BOARDS:
             continue
         soup = BeautifulSoup(response.text, "lxml")
         jobs = soup.find_all("a", href=True)
-        for job in jobs[:20]:  # top 20 per board for now
+        for job in jobs[:20]:
             title = job.get_text(strip=True)
             link = job["href"]
             if not link.startswith("http"):
                 link = f"https://{board['name'].lower().replace(' ', '')}.com{link}"
 
-            # Filter only Customer Care / Support / Representative
             if any(k.lower() in title.lower() for k in ["customer", "support", "care", "representative"]):
                 if link in sent_jobs:
-                    continue  # skip already sent jobs
+                    continue
                 keywords, skills = extract_keywords_skills(title, title)
                 all_jobs.append({
                     "Company": board["name"],
@@ -71,14 +69,14 @@ for board in JOB_BOARDS:
     except Exception as e:
         print(f"Error fetching {board['name']}: {e}")
 
-# ---- IF NEW JOBS EXIST, SEND EMAIL ---- #
+# ---- SEND EMAIL ---- #
 if all_jobs:
     df = pd.DataFrame(all_jobs)
     html_table = df.to_html(index=False, escape=False)
 
     try:
         yag = yagmail.SMTP(user=GMAIL_USER, password=GMAIL_APP_PASSWORD)
-        subject = "New Remote Customer Care Job Alert (Global)"
+        subject = "Twice-Daily Remote Customer Care Job Alert (Global)"
         contents = [
             "<h2>New Customer Care jobs available (Remote / Global):</h2>",
             html_table
@@ -88,6 +86,6 @@ if all_jobs:
     except Exception as e:
         print(f"Failed to send email: {e}")
 
-# ---- SAVE UPDATED SENT JOBS ---- #
+# ---- UPDATE SENT JOBS ---- #
 with open(SENT_JOBS_FILE, "w") as f:
     json.dump(sent_jobs, f)
