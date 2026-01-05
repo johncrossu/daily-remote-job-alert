@@ -1,12 +1,12 @@
-name: Twice-Daily Remote Customer Care Job Alert
+name: Twice-Daily Global Customer Care Job Alert
 
 on:
   schedule:
-    - cron: '0 10,22 * * *'  # runs twice a day: 10:00 UTC and 22:00 UTC
-  workflow_dispatch:         # allows manual runs anytime
+    - cron: "0 10,22 * * *"  # runs twice daily at 10:00 UTC and 22:00 UTC
+  workflow_dispatch:          # allows manual run
 
 jobs:
-  build:
+  job_alert:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -15,15 +15,16 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4 pandas lxml yagmail
+          pip install requests pandas yagmail
 
-      - name: Run job alert script
+      - name: Run Job Alert Script
         run: python job_alert.py
         env:
           GMAIL_USER: ${{ vars.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
