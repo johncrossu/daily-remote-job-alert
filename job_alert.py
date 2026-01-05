@@ -1,91 +1,85 @@
 import requests
-from bs4 import BeautifulSoup
+import json
 import pandas as pd
 import yagmail
 import os
-import json
 
-# ---- CONFIGURATION ---- #
+# ---- ENVIRONMENT ---- #
 GMAIL_USER = os.environ.get("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
-TO_EMAIL = GMAIL_USER
-SENT_JOBS_FILE = "sent_jobs.json"
-
-# ---- JOB BOARDS ---- #
-JOB_BOARDS = [
-    {"name": "RemoteOK", "url": "https://remoteok.com/remote-customer-support-jobs"},
-    {"name": "WeWorkRemotely", "url": "https://weworkremotely.com/categories/remote-customer-support-jobs"},
-    {"name": "StartupJobs", "url": "https://startup.jobs/remote-jobs/customer-support"},
-    {"name": "Indeed Canada", "url": "https://ca.indeed.com/jobs?q=Customer+Service+Representative&l=Remote"},
-    {"name": "Indeed USA", "url": "https://www.indeed.com/jobs?q=Customer+Service+Representative&l=Remote"},
-    {"name": "Indeed Nigeria", "url": "https://ng.indeed.com/jobs?q=Customer+Service+Representative&l=Remote"},
-    {"name": "Glassdoor UK", "url": "https://www.glassdoor.co.uk/Job/remote-customer-service-jobs-SRCH_IL.0,2_IS11047_KO3,20.htm"},
-    {"name": "Glassdoor USA", "url": "https://www.glassdoor.com/Job/us-remote-customer-service-jobs-SRCH_IL.0,2_IS1_KO3,22.htm"},
-]
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
+SENT_FILE = "sent_jobs.json"
 
 # ---- LOAD SENT JOBS ---- #
-if os.path.exists(SENT_JOBS_FILE):
-    with open(SENT_JOBS_FILE, "r") as f:
+try:
+    with open(SENT_FILE) as f:
         sent_jobs = json.load(f)
-else:
+except FileNotFoundError:
     sent_jobs = []
 
-# Helper to extract sample keywords and skills
-def extract_keywords_skills(title, description):
-    words = title.split() + description.split()
-    keywords = words[:5]
-    skills = words[5:10]
-    return keywords, skills
+new_jobs = []
 
-# ---- SCRAPE JOBS ---- #
-all_jobs = []
+# ---- FUNCTION: REMOTIVE API ---- #
+def get_remotive():
+    url = "https://remotive.com/api/remote-jobs?search=customer"
+    res = requests.get(url).json()
+    for job in res.get("jobs", []):
+        link = job["url"]
+        if link not in sent_jobs:
+            new_jobs.append({
+                "source": "Remotive",
+                "title": job["title"],
+                "company": job["company_name"],
+                "link": f'<a href="{link}">Open</a>'
+            })
+            sent_jobs.append(link)
 
-for board in JOB_BOARDS:
-    try:
-        response = requests.get(board["url"], headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code != 200:
-            print(f"Failed to fetch {board['name']}")
-            continue
-        soup = BeautifulSoup(response.text, "lxml")
-        jobs = soup.find_all("a", href=True)
-        for job in jobs[:20]:
-            title = job.get_text(strip=True)
-            link = job["href"]
-            if not link.startswith("http"):
-                link = f"https://{board['name'].lower().replace(' ', '')}.com{link}"
+# ---- FUNCTION: SERPAPI JOBS (Dynamic Sites) ---- #
+def get_serpapi(query, location=""):
+    endpoint = "https://serpapi.com/search.json"
+    params = {
+        "q": query,
+        "location": location,
+        "engine": "google_jobs",
+        "api_key": SERPAPI_KEY
+    }
+    res = requests.get(endpoint, params=params).json()
+    for job in res.get("jobs_results", []):
+        link = job.get("link")
+        title = job.get("title")
+        company = job.get("organization")
+        if link and link not in sent_jobs:
+            new_jobs.append({
+                "source": "SerpAPI",
+                "title": title,
+                "company": company,
+                "link": f'<a href="{link}">Open</a>'
+            })
+            sent_jobs.append(link)
 
-            if any(k.lower() in title.lower() for k in ["customer", "support", "care", "representative"]):
-                if link in sent_jobs:
-                    continue
-                keywords, skills = extract_keywords_skills(title, title)
-                all_jobs.append({
-                    "Company": board["name"],
-                    "Role": title,
-                    "Direct Link": f'<a href="{link}">Click Here</a>',
-                    "Keywords": ", ".join(keywords),
-                    "Skills": ", ".join(skills)
-                })
-                sent_jobs.append(link)
-    except Exception as e:
-        print(f"Error fetching {board['name']}: {e}")
+# ---- RUN API FETCHES ---- #
+get_remotive()
+locations = ["USA", "Canada", "UK", "Nigeria"]
+for loc in locations:
+    get_serpapi("Remote Customer Support Representative", loc)
+
+# ---- EXIT IF NO NEW JOBS ---- #
+if not new_jobs:
+    print("No new jobs to send.")
+    exit()
 
 # ---- SEND EMAIL ---- #
-if all_jobs:
-    df = pd.DataFrame(all_jobs)
-    html_table = df.to_html(index=False, escape=False)
-
-    try:
-        yag = yagmail.SMTP(user=GMAIL_USER, password=GMAIL_APP_PASSWORD)
-        subject = "Twice-Daily Remote Customer Care Job Alert (Global)"
-        contents = [
-            "<h2>New Customer Care jobs available (Remote / Global):</h2>",
-            html_table
-        ]
-        yag.send(to=TO_EMAIL, subject=subject, contents=contents)
-        print(f"Email sent for {len(all_jobs)} new jobs!")
-    except Exception as e:
-        print(f"Failed to send email: {e}")
+df = pd.DataFrame(new_jobs)
+html_table = df.to_html(index=False, escape=False)
+yag = yagmail.SMTP(GMAIL_USER, GMAIL_APP_PASSWORD)
+yag.send(
+    to=GMAIL_USER,
+    subject="Global Remote Customer Care Jobs Alert",
+    contents=[html_table]
+)
 
 # ---- UPDATE SENT JOBS ---- #
-with open(SENT_JOBS_FILE, "w") as f:
+with open(SENT_FILE, "w") as f:
     json.dump(sent_jobs, f)
+
+print(f"Sent {len(new_jobs)} new jobs to your email!")
