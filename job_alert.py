@@ -3,6 +3,7 @@ import json
 import os
 import yagmail
 import pandas as pd
+import feedparser
 
 # ------------------ ENV ------------------
 GMAIL_USER = os.environ.get("GMAIL_USER")
@@ -20,8 +21,18 @@ else:
 
 new_jobs = []
 
-# ------------------ FETCH JOBS ------------------
-def fetch_customer_care_jobs():
+# ------------------ HELPER FUNCTIONS ------------------
+def add_job(title, company, link):
+    if link not in sent_jobs:
+        new_jobs.append({
+            "Job Title": title,
+            "Company": company,
+            "Apply": f'<a href="{link}">Apply</a>'
+        })
+        sent_jobs.append(link)
+
+# ------------------ SERPAPI / GOOGLE JOBS ------------------
+def fetch_jobs_serpapi():
     url = "https://serpapi.com/search.json"
     params = {
         "engine": "google_jobs",
@@ -30,7 +41,6 @@ def fetch_customer_care_jobs():
     }
 
     data = requests.get(url, params=params).json()
-
     allowed_titles = [
         "customer care",
         "customer support",
@@ -39,8 +49,7 @@ def fetch_customer_care_jobs():
         "support representative",
         "call center"
     ]
-
-    blocked_locations = [
+    blocked = [
         "us only",
         "canada only",
         "uk only",
@@ -50,32 +59,50 @@ def fetch_customer_care_jobs():
 
     for job in data.get("jobs_results", []):
         title = (job.get("title") or "").lower()
-        link = job.get("link")
         company = job.get("organization")
+        link = job.get("link")
+        text = ((job.get("location") or "") + (job.get("description") or "")).lower()
 
-        text = (
-            (job.get("location") or "") + " " +
-            (job.get("description") or "")
-        ).lower()
-
-        # Title must be customer care
         if not any(t in title for t in allowed_titles):
             continue
-
-        # Block country-restricted jobs
-        if any(b in text for b in blocked_locations):
+        if any(b in text for b in blocked):
             continue
 
-        if link and link not in sent_jobs:
-            new_jobs.append({
-                "Job Title": job.get("title"),
-                "Company": company,
-                "Apply": f'<a href="{link}">Apply</a>'
-            })
-            sent_jobs.append(link)
+        add_job(job.get("title"), company, link)
 
-# ------------------ RUN ------------------
-fetch_customer_care_jobs()
+# ------------------ REMOTIVE API ------------------
+def fetch_jobs_remotive():
+    url = "https://remotive.io/api/remote-jobs"
+    res = requests.get(url)
+    if res.status_code != 200:
+        return
+    data = res.json()
+    for job in data.get("jobs", []):
+        title = job.get("title").lower()
+        company = job.get("company_name")
+        link = job.get("url")
+        allowed_titles = [
+            "customer care",
+            "customer support",
+            "customer service",
+            "customer representative",
+            "support representative",
+            "call center"
+        ]
+        if any(t in title for t in allowed_titles):
+            add_job(job.get("title"), company, link)
+
+# ------------------ WE WORK REMOTELY RSS ------------------
+def fetch_jobs_wwr():
+    feed_url = "https://weworkremotely.com/categories/remote-customer-support-jobs.rss"
+    feed = feedparser.parse(feed_url)
+    for entry in feed.entries:
+        add_job(entry.title, entry.get("author", "Unknown"), entry.link)
+
+# ------------------ RUN ALL SOURCES ------------------
+fetch_jobs_serpapi()
+fetch_jobs_remotive()
+fetch_jobs_wwr()
 
 # ------------------ EMAIL ------------------
 yag = yagmail.SMTP(GMAIL_USER, GMAIL_APP_PASSWORD)
@@ -84,21 +111,19 @@ if not new_jobs:
     yag.send(
         to=GMAIL_USER,
         subject="Customer Care Job Alert",
-        contents="No new customer care jobs found at this time."
+        contents="No new customer care jobs found at this time. Will keep checking."
     )
-    exit()
-
-df = pd.DataFrame(new_jobs)
-html = df.to_html(index=False, escape=False)
-
-yag.send(
-    to=GMAIL_USER,
-    subject="🔥 Remote Customer Care Jobs (Global)",
-    contents=[
-        "<h3>Remote Customer Care / Support Jobs</h3>",
-        html
-    ]
-)
+else:
+    df = pd.DataFrame(new_jobs)
+    html = df.to_html(index=False, escape=False)
+    yag.send(
+        to=GMAIL_USER,
+        subject="🔥 Remote Customer Care Jobs",
+        contents=[
+            "<h3>Remote Customer Care / Support Jobs</h3>",
+            html
+        ]
+    )
 
 with open(SENT_FILE, "w") as f:
     json.dump(sent_jobs, f)
