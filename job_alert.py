@@ -21,7 +21,7 @@ else:
 
 new_jobs = []
 
-# ------------------ HELPER FUNCTIONS ------------------
+# ------------------ HELPER FUNCTION ------------------
 def add_job(title, company, link):
     if link not in sent_jobs:
         new_jobs.append({
@@ -40,7 +40,12 @@ def fetch_jobs_serpapi():
         "api_key": SERPAPI_KEY
     }
 
-    data = requests.get(url, params=params).json()
+    try:
+        data = requests.get(url, params=params, timeout=15).json()
+    except Exception as e:
+        print(f"SerpAPI fetch failed: {e}")
+        return
+
     allowed_titles = [
         "customer care",
         "customer support",
@@ -73,29 +78,38 @@ def fetch_jobs_serpapi():
 # ------------------ REMOTIVE API ------------------
 def fetch_jobs_remotive():
     url = "https://remotive.io/api/remote-jobs"
-    res = requests.get(url)
-    if res.status_code != 200:
+    try:
+        res = requests.get(url, timeout=15)
+        data = res.json()
+    except Exception as e:
+        print(f"Remotive fetch failed: {e}")
         return
-    data = res.json()
+
+    allowed_titles = [
+        "customer care",
+        "customer support",
+        "customer service",
+        "customer representative",
+        "support representative",
+        "call center"
+    ]
+
     for job in data.get("jobs", []):
         title = job.get("title").lower()
         company = job.get("company_name")
         link = job.get("url")
-        allowed_titles = [
-            "customer care",
-            "customer support",
-            "customer service",
-            "customer representative",
-            "support representative",
-            "call center"
-        ]
         if any(t in title for t in allowed_titles):
             add_job(job.get("title"), company, link)
 
 # ------------------ WE WORK REMOTELY RSS ------------------
 def fetch_jobs_wwr():
     feed_url = "https://weworkremotely.com/categories/remote-customer-support-jobs.rss"
-    feed = feedparser.parse(feed_url)
+    try:
+        feed = feedparser.parse(feed_url)
+    except Exception as e:
+        print(f"WWR fetch failed: {e}")
+        return
+
     for entry in feed.entries:
         add_job(entry.title, entry.get("author", "Unknown"), entry.link)
 
@@ -105,25 +119,29 @@ fetch_jobs_remotive()
 fetch_jobs_wwr()
 
 # ------------------ EMAIL ------------------
-yag = yagmail.SMTP(GMAIL_USER, GMAIL_APP_PASSWORD)
+try:
+    yag = yagmail.SMTP(GMAIL_USER, GMAIL_APP_PASSWORD)
 
-if not new_jobs:
-    yag.send(
-        to=GMAIL_USER,
-        subject="Customer Care Job Alert",
-        contents="No new customer care jobs found at this time. Will keep checking."
-    )
-else:
-    df = pd.DataFrame(new_jobs)
-    html = df.to_html(index=False, escape=False)
-    yag.send(
-        to=GMAIL_USER,
-        subject="🔥 Remote Customer Care Jobs",
-        contents=[
-            "<h3>Remote Customer Care / Support Jobs</h3>",
-            html
-        ]
-    )
+    if not new_jobs:
+        yag.send(
+            to=GMAIL_USER,
+            subject="Customer Care Job Alert",
+            contents="No new customer care jobs found at this time. Will keep checking."
+        )
+    else:
+        df = pd.DataFrame(new_jobs)
+        html = df.to_html(index=False, escape=False)
+        yag.send(
+            to=GMAIL_USER,
+            subject="🔥 Remote Customer Care Jobs",
+            contents=[
+                "<h3>Remote Customer Care / Support Jobs</h3>",
+                html
+            ]
+        )
+except Exception as e:
+    print(f"Email failed: {e}")
 
+# ------------------ SAVE SENT JOBS ------------------
 with open(SENT_FILE, "w") as f:
     json.dump(sent_jobs, f)
