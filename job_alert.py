@@ -2,12 +2,14 @@ import os
 import requests
 import pandas as pd
 import json
+import feedparser
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Content, Email, To, HtmlContent
+from sendgrid.helpers.mail import Mail, Email, To
 
 # ------------------ ENV ------------------
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 EMAIL_TO = os.environ.get("EMAIL_TO")
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 SENT_FILE = "sent_jobs.json"
 
 # ------------------ LOAD SENT JOBS ------------------
@@ -31,13 +33,14 @@ def add_job(title, company, link):
 
 # ------------------ FETCH SERPAPI ------------------
 def fetch_jobs_serpapi():
+    if not SERPAPI_KEY:
+        return
     url = "https://serpapi.com/search.json"
     params = {
         "engine": "google_jobs",
         "q": "Remote Customer Care Representative",
-        "api_key": os.environ.get("SERPAPI_KEY")  # optional, keep for later
+        "api_key": SERPAPI_KEY
     }
-
     try:
         data = requests.get(url, params=params, timeout=15).json()
     except Exception as e:
@@ -45,21 +48,18 @@ def fetch_jobs_serpapi():
         return
 
     allowed_titles = ["customer care", "customer support", "customer service", "customer representative", "call center"]
-    blocked = ["us only", "canada only", "uk only", "europe only", "united states only"]
 
     for job in data.get("jobs_results", []):
         title = (job.get("title") or "").lower()
         company = job.get("organization")
         link = job.get("link")
-        text = ((job.get("location") or "") + (job.get("description") or "")).lower()
-        if any(t in title for t in allowed_titles) and not any(b in text for b in blocked):
+        if any(t in title for t in allowed_titles):
             add_job(job.get("title"), company, link)
 
 # ------------------ FETCH REMOTIVE ------------------
 def fetch_jobs_remotive():
-    url = "https://remotive.io/api/remote-jobs"
     try:
-        res = requests.get(url, timeout=15)
+        res = requests.get("https://remotive.io/api/remote-jobs", timeout=15)
         data = res.json()
     except Exception as e:
         print(f"Remotive fetch failed: {e}")
@@ -75,7 +75,6 @@ def fetch_jobs_remotive():
 
 # ------------------ FETCH WWR ------------------
 def fetch_jobs_wwr():
-    import feedparser
     feed_url = "https://weworkremotely.com/categories/remote-customer-support-jobs.rss"
     try:
         feed = feedparser.parse(feed_url)
@@ -94,21 +93,17 @@ fetch_jobs_wwr()
 # ------------------ SEND EMAIL ------------------
 try:
     if not new_jobs:
-        message = Mail(
-            from_email=Email("alerts@sendgrid.net"),
-            to_emails=To(EMAIL_TO),
-            subject="Customer Care Job Alert",
-            html_content="<p>No new customer care jobs found at this time. Will keep checking.</p>"
-        )
+        content_html = "<p>No new customer care jobs found at this time. Will keep checking.</p>"
     else:
         df = pd.DataFrame(new_jobs)
-        html = df.to_html(index=False, escape=False)
-        message = Mail(
-            from_email=Email("alerts@sendgrid.net"),
-            to_emails=To(EMAIL_TO),
-            subject=f"🔥 Remote Customer Care Jobs ({len(new_jobs)} new)",
-            html_content=f"<h3>Remote Customer Care / Support Jobs</h3>{html}"
-        )
+        content_html = "<h3>Remote Customer Care / Support Jobs</h3>" + df.to_html(index=False, escape=False)
+
+    message = Mail(
+        from_email=Email("alerts@sendgrid.net"),
+        to_emails=To(EMAIL_TO),
+        subject=f"🔥 Remote Customer Care Jobs ({len(new_jobs)} new)",
+        html_content=content_html
+    )
 
     sg = SendGridAPIClient(SENDGRID_API_KEY)
     response = sg.send(message)
