@@ -20,17 +20,16 @@ else:
 
 new_jobs = []
 
-# ------------------ SERPAPI (GOOGLE JOBS) ------------------
+# ------------------ FETCH JOBS ------------------
 def fetch_customer_care_jobs():
     url = "https://serpapi.com/search.json"
     params = {
         "engine": "google_jobs",
-        "q": "Remote Customer Care Representative Nigeria Global",
+        "q": "Remote Customer Care Representative",
         "api_key": SERPAPI_KEY
     }
 
-    response = requests.get(url, params=params)
-    data = response.json()
+    data = requests.get(url, params=params).json()
 
     allowed_titles = [
         "customer care",
@@ -39,15 +38,6 @@ def fetch_customer_care_jobs():
         "customer representative",
         "support representative",
         "call center"
-    ]
-
-    allowed_locations = [
-        "nigeria",
-        "global",
-        "worldwide",
-        "anywhere",
-        "remote",
-        "africa"
     ]
 
     blocked_locations = [
@@ -68,13 +58,12 @@ def fetch_customer_care_jobs():
             (job.get("description") or "")
         ).lower()
 
+        # Title must be customer care
         if not any(t in title for t in allowed_titles):
             continue
 
+        # Block country-restricted jobs
         if any(b in text for b in blocked_locations):
-            continue
-
-        if not any(a in text for a in allowed_locations):
             continue
 
         if link and link not in sent_jobs:
@@ -88,25 +77,25 @@ def fetch_customer_care_jobs():
 # ------------------ RUN ------------------
 fetch_customer_care_jobs()
 
+# ------------------ EMAIL ------------------
+yag = yagmail.SMTP(GMAIL_USER, GMAIL_APP_PASSWORD)
+
 if not new_jobs:
-    yag = yagmail.SMTP(GMAIL_USER, GMAIL_APP_PASSWORD)
     yag.send(
         to=GMAIL_USER,
         subject="Customer Care Job Alert",
-        contents="No new Nigeria-eligible customer care jobs found at this time."
+        contents="No new customer care jobs found at this time."
     )
     exit()
 
-# ------------------ EMAIL ------------------
 df = pd.DataFrame(new_jobs)
 html = df.to_html(index=False, escape=False)
 
-yag = yagmail.SMTP(GMAIL_USER, GMAIL_APP_PASSWORD)
 yag.send(
     to=GMAIL_USER,
-    subject="🔥 Remote Customer Care Jobs (Nigeria / Global)",
+    subject="🔥 Remote Customer Care Jobs (Global)",
     contents=[
-        "<h3>Customer Care / Support Jobs (Nigeria & Global)</h3>",
+        "<h3>Remote Customer Care / Support Jobs</h3>",
         html
     ]
 )
