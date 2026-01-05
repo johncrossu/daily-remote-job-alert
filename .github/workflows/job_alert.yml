@@ -24,7 +24,9 @@ jobs:
           pip install requests pandas yagmail feedparser
 
       - name: Run job alert script
-        run: python job_alert.py
+        run: |
+          set -o pipefail
+          python job_alert.py 2>&1 | tee output.log
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
