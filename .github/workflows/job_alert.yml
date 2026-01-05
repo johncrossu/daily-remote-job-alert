@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Python 3.14
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.14
@@ -21,13 +21,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas yagmail feedparser
+          pip install requests pandas sendgrid
 
       - name: Run job alert script
-        run: |
-          set -o pipefail
-          python job_alert.py 2>&1 | tee output.log
+        run: python job_alert_sendgrid.py
         env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          EMAIL_TO: johncrossugwuegede@gmail.com
