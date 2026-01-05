@@ -1,10 +1,19 @@
+name: Daily Remote Job Alert
+
+on:
+  schedule:
+    - cron: "0 10,22 * * *"  # Twice daily at 10:00 and 22:00 UTC
+  workflow_dispatch:
+
 jobs:
   job_alert:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
 
-      - name: Set up Python
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.14
         uses: actions/setup-python@v4
         with:
           python-version: 3.14
@@ -14,7 +23,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas yagmail feedparser
 
-      - name: Run job alert
+      - name: Run job alert script
         run: python job_alert.py
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
